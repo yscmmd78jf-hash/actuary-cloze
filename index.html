@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="穴埋め">
+<title>アクチュアリー穴埋め</title>
+<style>
+  :root {
+    --bg:#f8fafc; --card:#ffffff; --border:#e2e8f0; --text:#1e293b;
+    --sub:#94a3b8; --accent:#4f46e5; --accent-bg:#eef2ff;
+    --ok:#059669; --ok-bg:#ecfdf5; --ng:#e11d48; --ng-bg:#fff1f2;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+  body {
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    background:var(--bg); color:var(--text); font-size:15px;
+    padding-bottom:calc(70px + env(safe-area-inset-bottom));
+  }
+  header { background:var(--card); border-bottom:1px solid var(--border); padding:14px 18px 10px; padding-top:calc(14px + env(safe-area-inset-top)); }
+  header h1 { font-size:17px; font-weight:700; }
+  header p { font-size:11px; color:var(--sub); margin-top:2px; }
+  main { padding:14px; max-width:560px; margin:0 auto; }
+  nav {
+    position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--card);
+    border-top:1px solid var(--border); padding-bottom:env(safe-area-inset-bottom); z-index:10;
+  }
+  nav button { flex:1; background:none; border:none; padding:10px 0 8px; font-size:11px; color:var(--sub); font-family:inherit; }
+  nav button.active { color:var(--accent); font-weight:600; }
+  nav button .ico { display:block; font-size:19px; margin-bottom:2px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; margin-bottom:12px; }
+  .qtext { line-height:1.9; font-size:15px; }
+  .blankmark { display:inline-block; margin:0 2px; padding:1px 8px; border-radius:6px; background:var(--accent-bg); color:var(--accent); font-weight:700; }
+  .meta { display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--sub); margin-bottom:10px; }
+  .pill { background:#f1f5f9; border-radius:99px; padding:2px 8px; }
+  .sec-label { font-size:11px; color:var(--sub); margin:10px 0 4px; font-weight:600; }
+  button.btn {
+    display:block; width:100%; min-height:48px; border:none; border-radius:10px;
+    font-size:14px; font-family:inherit; font-weight:600; cursor:pointer;
+  }
+  .btn-primary { background:var(--accent); color:#fff; }
+  .btn-ok { background:var(--ok); color:#fff; }
+  .btn-dark { background:#1e293b; color:#fff; }
+  .btn-ghost { background:var(--card); border:1px solid var(--border) !important; color:#475569; font-weight:400; }
+  .btn:disabled { opacity:.4; }
+  .choice {
+    display:block; width:100%; min-height:48px; text-align:left; padding:12px 14px; margin-bottom:8px;
+    background:var(--card); border:1.5px solid var(--border); border-radius:10px; font-size:14px; font-family:inherit; cursor:pointer;
+  }
+  .choice.sel { border-color:var(--accent); background:var(--accent-bg); color:var(--accent); font-weight:600; }
+  input[type=text], input[type=number], textarea, select {
+    width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:10px;
+    font-size:14px; font-family:inherit; background:var(--card); color:var(--text);
+  }
+  input[type=text] { height:48px; }
+  textarea { min-height:110px; line-height:1.7; }
+  textarea.mono { font-family:ui-monospace,Menlo,monospace; font-size:11px; min-height:90px; }
+  .result { border-radius:10px; padding:12px; margin-bottom:8px; font-size:14px; }
+  .result.ok { background:var(--ok-bg); color:var(--ok); }
+  .result.ng { background:var(--ng-bg); color:var(--ng); }
+  .result .duetxt { font-size:11px; opacity:.75; margin-top:3px; }
+  .result button { background:none; border:none; text-decoration:underline; color:#64748b; font-size:12px; margin-top:4px; padding:0; font-family:inherit; }
+  .ansline.ok { color:var(--ok); font-weight:700; }
+  .ansline.ng { color:var(--ng); font-weight:700; }
+  .letter { font-size:11px; opacity:.6; margin-right:1px; }
+  .small { font-size:11px; color:var(--sub); }
+  .msg-ok { font-size:12px; color:var(--ok); margin:6px 0; }
+  .msg-ng { font-size:12px; color:var(--ng); margin:6px 0; }
+  .listitem { display:flex; align-items:center; gap:8px; }
+  .listitem .txt { flex:1; min-width:0; font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tagchip { font-size:10px; background:#f1f5f9; color:#64748b; border-radius:5px; padding:1px 5px; margin-right:4px; }
+  .iconbtn { background:none; border:none; font-size:16px; color:#cbd5e1; padding:6px; font-family:inherit; }
+  .blankrow { border-top:1px solid #f1f5f9; padding-top:8px; margin-top:8px; font-size:12px; }
+  .blankrow .stats { font-size:11px; color:var(--sub); margin:2px 0 6px; }
+  .blankrow select { width:auto; padding:5px 8px; font-size:12px; margin-right:6px; height:auto; }
+  .center { text-align:center; padding:56px 0; color:var(--sub); font-size:14px; }
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; z-index:50; padding:24px; }
+  .modal { background:var(--card); border-radius:14px; padding:20px; max-width:320px; width:100%; }
+  .modal p { font-size:14px; margin-bottom:14px; }
+  .modal .row { display:flex; gap:8px; }
+  .hide { display:none !important; }
+  .gap8 > * + * { margin-top:8px; }
+  code { background:#f1f5f9; padding:1px 5px; border-radius:4px; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>アクチュアリー穴埋め</h1>
+  <p>間隔反復で穴埋め問題を練習する</p>
+</header>
+<main id="main"></main>
+<nav>
+  <button id="nav-study" onclick="switchTab('study')"><span class="ico">📖</span>学習</button>
+  <button id="nav-register" onclick="switchTab('register')"><span class="ico">＋</span>登録</button>
+  <button id="nav-list" onclick="switchTab('list')"><span class="ico">☰</span>一覧</button>
+</nav>
+<div id="modal" class="modal-bg hide"></div>
+
+<script>
+"use strict";
+/* ============================ データ層 ============================ */
+const STORAGE_KEY = "actuary-srs-v1";
+
+function defaultData() {
+  return {
+    settings: {
+      intervals: [600, 86400, 259200, 604800, 1209600, 2592000, 5184000, 10368000],
+      promoteStreak: 3,
+      promoteAccuracy: 0.8,
+    },
+    cards: [],
+  };
+}
+
+let data = loadData();
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const d = JSON.parse(raw);
+      if (!d.settings) d.settings = defaultData().settings;
+      if (!d.cards) d.cards = [];
+      return d;
+    }
+  } catch (e) { console.error(e); }
+  return defaultData();
+}
+
+function saveData() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    alert("保存に失敗しました: " + e.message);
+  }
+}
+
+function genId(p) {
+  return p + "_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+}
+
+/* ============================ ユーティリティ ============================ */
+function nfkcNorm(s) {
+  return (s || "").normalize("NFKC").trim().replace(/\s+/g, "").toLowerCase();
+}
+/* 「/」は表記ゆれ区切り。数字に挟まれた「/」(分数)は分割しない */
+function splitVariants(f) {
+  return (f || "").split(/(?<!\d)\/|\/(?!\d)/).map(v => v.trim()).filter(Boolean);
+}
+function checkAnswer(input, field) {
+  const n = nfkcNorm(input);
+  return splitVariants(field).some(v => nfkcNorm(v) === n);
+}
+function primaryAnswer(field) {
+  const v = splitVariants(field);
+  return v.length ? v[0] : (field || "").trim();
+}
+function blankLetter(order) {
+  let n = order - 1, s = "";
+  do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } while (n >= 0);
+  return s;
+}
+function formatDue(due) {
+  if (due === null || due === undefined) return "新規";
+  const diff = due - Date.now();
+  if (diff <= 0) return "復習待ち";
+  const m = Math.round(diff / 60000);
+  if (m < 60) return m + "分後";
+  const h = Math.round(diff / 3600000);
+  if (h < 24) return h + "時間後";
+  return Math.round(diff / 86400000) + "日後";
+}
+function shuffle(a) {
+  a = [...a];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function esc(s) {
+  return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/* ============================ パース ============================ */
+/* 対応形式: {ラベル:答え} / {ラベル} / {答え}(同語句は同一空欄) / {{答え}} / {{cN::答え}}
+   半角{}・全角｛｝どちらも可 */
+function parseCardText(rawInput) {
+  const raw = rawInput.replace(/｛/g, "{").replace(/｝/g, "}");
+  const regex = /\{\{c(\d+)::([^{}]+)\}\}|\{\{([^{}]+)\}\}|\{([^{}:]+):([^{}]+)\}|\{([^{}:]+)\}/g;
+  const tokens = [], groups = {}, order = [];
+  let last = 0, auto = 0, m;
+  while ((m = regex.exec(raw)) !== null) {
+    if (m.index > last) tokens.push({ type: "text", value: raw.slice(last, m.index) });
+    let key;
+    if (m[1] !== undefined) {
+      key = "c" + m[1];
+      if (!groups[key]) { groups[key] = { label: null, answers: [] }; order.push(key); }
+      groups[key].answers.push(m[2].trim());
+    } else if (m[3] !== undefined) {
+      auto++; key = "auto" + auto;
+      groups[key] = { label: null, answers: [m[3].trim()] }; order.push(key);
+    } else if (m[4] !== undefined) {
+      const label = m[4].trim(); key = "lbl:" + label;
+      if (!groups[key]) { groups[key] = { label, answers: [] }; order.push(key); }
+      if (!groups[key].label) groups[key].label = label;
+      groups[key].answers.push(m[5].trim());
+    } else {
+      const word = m[6].trim(); key = "lbl:" + word;
+      if (!groups[key]) { groups[key] = { label: null, answers: [word] }; order.push(key); }
+    }
+    tokens.push({ type: "blank", key });
+    last = regex.lastIndex;
+  }
+  if (last < raw.length) tokens.push({ type: "text", value: raw.slice(last) });
+  const blanks = order.map((key, i) => ({
+    key, order: i + 1, label: groups[key].label || null, answer: groups[key].answers[0] || "",
+  }));
+  return { tokens, blanks };
+}
+
+function cardToRawText(card) {
+  const seen = new Set();
+  return card.tokens.map(t => {
+    if (t.type === "text") return t.value;
+    const b = card.blanks.find(b => b.key === t.key);
+    if (!b) return "";
+    const first = !seen.has(t.key);
+    seen.add(t.key);
+    if (t.key.startsWith("lbl:")) {
+      if (b.label) return first ? `{${b.label}:${b.answer}}` : `{${b.label}}`;
+      return `{${b.answer}}`;
+    }
+    if (t.key.startsWith("c")) return `{{c${t.key.slice(1)}::${b.answer}}}`;
+    return `{{${b.answer}}}`;
+  }).join("");
+}
+
+function newBlankState(b) {
+  return {
+    id: genId("blank"), key: b.key, order: b.order, label: b.label || null,
+    answer: b.answer, distractors: (b.distractors || []).filter(Boolean),
+    streak: 0, attempts: 0, correct: 0, intervalIndex: -1, due: null,
+    mode: "auto", customIntervalScale: 1.0,
+  };
+}
+function mergeBlanks(parsed, existing) {
+  return parsed.map(b => {
+    const old = (existing || []).find(o => o.key === b.key);
+    if (!old) return newBlankState(b);
+    return { ...old, order: b.order, label: b.label, answer: b.answer };
+  });
+}
+
+/* ============================ SRS ============================ */
+function computeQueue() {
+  const now = Date.now(), due = [], fresh = [];
+  data.cards.forEach(c => {
+    if (!c.blanks || !c.blanks.length) return;
+    const d = c.blanks.filter(b => b.due !== null && b.due <= now).map(b => b.due);
+    if (d.length) due.push({ cardId: c.id, due: Math.min(...d) });
+    else if (c.blanks.some(b => b.due === null)) fresh.push({ cardId: c.id, due: 0 });
+  });
+  due.sort((a, b) => a.due - b.due);
+  return { queue: [...due, ...fresh], dueCount: due.length, freshCount: fresh.length };
+}
+function isInputMode(b) {
+  if (b.mode === "choice") return false;
+  if (b.mode === "input") return true;
+  const s = data.settings;
+  return b.streak >= s.promoteStreak && b.attempts >= 3 && b.attempts > 0 && b.correct / b.attempts >= s.promoteAccuracy;
+}
+function applyResult(blank, correct) {
+  blank.attempts += 1;
+  if (correct) blank.correct += 1;
+  const scale = blank.customIntervalScale || 1.0;
+  if (correct) {
+    blank.streak += 1;
+    blank.intervalIndex = Math.min(blank.intervalIndex + 1, data.settings.intervals.length - 1);
+  } else {
+    blank.streak = 0;
+    blank.intervalIndex = 0;
+  }
+  blank.due = Date.now() + data.settings.intervals[blank.intervalIndex] * 1000 * scale;
+}
+
+/* ============================ モーダル ============================ */
+function confirmModal(message, onOk) {
+  const el = document.getElementById("modal");
+  el.classList.remove("hide");
+  el.innerHTML = `<div class="modal"><p>${esc(message)}</p><div class="row">
+    <button class="btn btn-ghost" style="flex:1" onclick="closeModal()">キャンセル</button>
+    <button class="btn" style="flex:1;background:var(--ng);color:#fff" id="modal-ok">実行する</button>
+  </div></div>`;
+  document.getElementById("modal-ok").onclick = () => { closeModal(); onOk(); };
+}
+function closeModal() {
+  const el = document.getElementById("modal");
+  el.classList.add("hide"); el.innerHTML = "";
+}
+
+/* ============================ タブ制御 ============================ */
+let tab = "study";
+function switchTab(t) {
+  tab = t;
+  ["study", "register", "list"].forEach(x =>
+    document.getElementById("nav-" + x).classList.toggle("active", x === t));
+  if (t === "study") initStudy();
+  else if (t === "register") renderRegister();
+  else renderList();
+}
+</script>
+<script>
+/* ============================ 学習タブ ============================ */
+let sQueue = [], sPos = 0, sPhase = "question", sAnswers = {}, sChoices = {}, sResults = null;
+
+function initStudy() {
+  const info = computeQueue();
+  sQueue = info.queue; sPos = 0;
+  resetCardState();
+  renderStudy(info);
+}
+function resetCardState() {
+  sPhase = "question"; sAnswers = {}; sChoices = {}; sResults = null;
+  const card = currentCard();
+  if (!card) return;
+  card.blanks.forEach(b => {
+    sAnswers[b.key] = "";
+    if (!isInputMode(b)) {
+      const correct = primaryAnswer(b.answer);
+      let pool = [...(b.distractors || [])];
+      if (pool.length < 3) {
+        const others = [];
+        data.cards.forEach(c => c.blanks.forEach(o => {
+          const a = primaryAnswer(o.answer);
+          if (a !== correct && !pool.includes(a) && !others.includes(a)) others.push(a);
+        }));
+        pool = [...pool, ...shuffle(others)].slice(0, 3);
+      } else pool = pool.slice(0, 3);
+      sChoices[b.key] = shuffle([correct, ...pool]);
+    }
+  });
+}
+function currentCard() {
+  const item = sQueue[sPos];
+  return item ? data.cards.find(c => c.id === item.cardId) : null;
+}
+
+function renderStudy(info) {
+  info = info || computeQueue();
+  const main = document.getElementById("main");
+  const card = currentCard();
+  if (!card) {
+    main.innerHTML = `<div class="center">本日分の学習は完了しました 🎉
+      ${data.cards.length === 0 ? '<p class="small" style="margin-top:8px">「登録」タブから問題を追加してください</p>' : ""}
+      <div style="margin-top:18px"><button class="btn btn-ghost" style="width:auto;padding:0 18px;min-height:42px;margin:0 auto" onclick="initStudy()">出題キューを更新する</button></div>
+    </div>`;
+    return;
+  }
+  const qHtml = card.tokens.map(t => {
+    if (t.type === "text") return esc(t.value).replace(/\n/g, "<br>");
+    const b = card.blanks.find(b => b.key === t.key);
+    if (!b) return "";
+    if (sPhase === "question") return `<span class="blankmark">【 ${blankLetter(b.order)} 】</span>`;
+    const r = sResults && sResults[b.key];
+    const cls = r ? (r.correct ? "ok" : "ng") : "";
+    return `<span class="ansline ${cls}"><span class="letter">${blankLetter(b.order)}:</span>${esc(primaryAnswer(b.answer))}</span>`;
+  }).join("");
+
+  let body = "";
+  if (sPhase === "question") {
+    body = card.blanks.map(b => {
+      const im = isInputMode(b);
+      let inner;
+      if (im) {
+        inner = `<input type="text" placeholder="答えを入力" value="${esc(sAnswers[b.key] || "")}"
+          oninput="sAnswers['${esc(b.key)}']=this.value;updateSubmitBtn()">`;
+      } else {
+        inner = (sChoices[b.key] || []).map(c =>
+          `<button class="choice ${sAnswers[b.key] === c ? "sel" : ""}" onclick="pickChoice('${esc(b.key)}', this)" data-v="${esc(c)}">${esc(c)}</button>`
+        ).join("");
+      }
+      return `<div class="sec-label">空欄 ${blankLetter(b.order)} <span class="pill">${im ? "入力式" : "4択"}</span></div>${inner}`;
+    }).join("") +
+    `<div style="margin-top:14px"><button class="btn btn-primary" id="submit-btn" onclick="submitAll()">判定する</button></div>`;
+  } else {
+    body = card.blanks.map(b => {
+      const r = sResults[b.key];
+      if (!r) return "";
+      const im = isInputMode(b);
+      return `<div class="result ${r.correct ? "ok" : "ng"}">
+        ${r.correct ? "✓" : "✕"} 空欄${blankLetter(b.order)}: ${r.correct ? "正解" : "不正解"} — 正答: <b>${esc(primaryAnswer(b.answer))}</b>
+        <div class="duetxt">次回出題: ${formatDue(b.due)}</div>
+        ${(!r.correct && !r.overridden && im) ? `<div><button onclick="overrideCorrect('${esc(b.key)}')">実は正解だった(表記ゆれなど)</button></div>` : ""}
+      </div>`;
+    }).join("") +
+    `<div style="margin-top:12px"><button class="btn btn-primary" onclick="nextCard()">次へ ›</button></div>`;
+  }
+
+  main.innerHTML = `
+    <div class="meta">
+      <span>残り ${sQueue.length - sPos}問(復習 ${info.dueCount}・新規 ${info.freshCount})</span>
+      <span class="pill">空欄 ${card.blanks.length}個</span>
+    </div>
+    <div class="card qtext">${qHtml}</div>
+    ${body}`;
+  updateSubmitBtn();
+}
+function pickChoice(key, el) {
+  sAnswers[key] = el.getAttribute("data-v");
+  renderStudy();
+}
+function updateSubmitBtn() {
+  const btn = document.getElementById("submit-btn");
+  if (!btn) return;
+  const card = currentCard();
+  btn.disabled = !card.blanks.every(b => (sAnswers[b.key] || "").trim().length > 0);
+}
+function submitAll() {
+  const card = currentCard();
+  if (!card) return;
+  sResults = {};
+  card.blanks.forEach(b => {
+    const val = sAnswers[b.key] || "";
+    const correct = isInputMode(b)
+      ? checkAnswer(val, b.answer)
+      : nfkcNorm(val) === nfkcNorm(primaryAnswer(b.answer));
+    sResults[b.key] = { correct, overridden: false };
+    applyResult(b, correct);
+  });
+  saveData();
+  sPhase = "result";
+  renderStudy();
+}
+function overrideCorrect(key) {
+  const card = currentCard();
+  const b = card.blanks.find(b => b.key === key);
+  if (!b) return;
+  // 直前の不正解記録を正解に修正
+  b.correct += 1; b.streak += 1;
+  b.intervalIndex = Math.min(b.intervalIndex + 1, data.settings.intervals.length - 1);
+  b.due = Date.now() + data.settings.intervals[b.intervalIndex] * 1000 * (b.customIntervalScale || 1.0);
+  sResults[key] = { correct: true, overridden: true };
+  saveData();
+  renderStudy();
+}
+function nextCard() {
+  sPos += 1;
+  resetCardState();
+  renderStudy();
+}
+</script>
+<script>
+/* ============================ 登録タブ ============================ */
+let rDrafts = [], rBulk = "", rTag = "";
+
+function renderRegister() {
+  const main = document.getElementById("main");
+  main.innerHTML = `
+    <div class="sec-label">問題(空行で区切って複数貼り付け可)</div>
+    <p class="small" style="margin-bottom:6px">空欄は <code>{答え}</code> と書きます(全角｛｝も可)。同じ語句は自動で同一空欄になります。ラベル形式 <code>{A:答え}</code>+<code>{A}</code> も使えます。</p>
+    <textarea id="r-bulk" placeholder="例:&#10;死亡率の推定には{クレーム法}が用いられる。&#10;&#10;{マルコフ}連鎖は将来の状態が現在の状態のみに依存する。">${esc(rBulk)}</textarea>
+    <div class="sec-label">タグ(任意)</div>
+    <input type="text" id="r-tag" placeholder="例: 生保2" value="${esc(rTag)}">
+    <div style="margin-top:12px"><button class="btn btn-dark" onclick="parseRegister()">解析してプレビュー</button></div>
+    <p class="small" style="margin-top:8px">※誤答選択肢の自動生成が必要な場合は、問題文をClaudeのチャットに貼って作成し、プレビュー欄に貼り付けてください。空欄のままでも、4択時は他の問題の答えから自動補完されます。</p>
+    <div id="r-preview"></div>`;
+  document.getElementById("r-bulk").addEventListener("input", e => rBulk = e.target.value);
+  document.getElementById("r-tag").addEventListener("input", e => rTag = e.target.value);
+  renderRegisterPreview();
+}
+
+function parseRegister() {
+  const blocks = rBulk.split(/\n\s*\n+/).map(b => b.trim()).filter(Boolean);
+  rDrafts = blocks.map(b => {
+    const { tokens, blanks } = parseCardText(b);
+    return { id: genId("d"), tokens, blanks: blanks.map(x => ({ ...x, distractors: ["", "", ""] })) };
+  });
+  renderRegisterPreview();
+}
+
+function renderRegisterPreview() {
+  const el = document.getElementById("r-preview");
+  if (!el) return;
+  if (!rDrafts.length) { el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="meta" style="margin-top:14px"><span>${rDrafts.length}問を検出</span></div>` +
+    rDrafts.map((d, di) => {
+      const q = d.tokens.map(t => {
+        if (t.type === "text") return esc(t.value).replace(/\n/g, "<br>");
+        const b = d.blanks.find(b => b.key === t.key);
+        return `<span class="blankmark" style="background:#fef3c7;color:#b45309"><span class="letter">${b ? blankLetter(b.order) : "?"}:</span>${esc(b ? b.answer : "?")}</span>`;
+      }).join("");
+      const blanksHtml = d.blanks.map((b, bi) => `
+        <div class="blankrow">
+          ${!b.answer ? `<p class="msg-ng">ラベル「${esc(b.label || "")}」の定義({${esc(b.label || "")}:答え})が見つかりません</p>` : ""}
+          <div>空欄${blankLetter(b.order)}(正答: <b>${esc(b.answer || "未定義")}</b>)の誤答</div>
+          <div class="gap8" style="margin-top:6px">
+            ${[0, 1, 2].map(i => `<input type="text" placeholder="誤答${i + 1}(任意)" value="${esc(b.distractors[i] || "")}"
+              oninput="rDrafts[${di}].blanks[${bi}].distractors[${i}]=this.value">`).join("")}
+          </div>
+        </div>`).join("");
+      return `<div class="card"><div class="qtext" style="font-size:13px">${q}</div>${blanksHtml}</div>`;
+    }).join("") +
+    `<button class="btn btn-ok" onclick="saveRegister()">${rDrafts.length}問を保存する</button>`;
+}
+
+function saveRegister() {
+  rDrafts.forEach(d => {
+    data.cards.push({
+      id: genId("card"), createdAt: Date.now(), tag: rTag || "",
+      tokens: d.tokens,
+      blanks: d.blanks.map(b => newBlankState(b)),
+    });
+  });
+  saveData();
+  const n = rDrafts.length;
+  rDrafts = []; rBulk = "";
+  renderRegister();
+  document.getElementById("r-preview").innerHTML = `<p class="msg-ok">${n}問を保存しました</p>`;
+}
+</script>
+<script>
+/* ============================ 一覧タブ ============================ */
+let lExpanded = null, lEditing = null, lShowSettings = false, lShowBackup = false, lMsg = "";
+let lEdit = null; // {tag, rawText, tokens, blanks}
+
+function renderList() {
+  const main = document.getElementById("main");
+  let html = `<div class="meta">
+    <span>${data.cards.length}問登録済み</span>
+    <span>
+      <button class="iconbtn" style="color:#64748b;font-size:12px" onclick="lShowSettings=!lShowSettings;lShowBackup=false;renderList()">⚙ 設定</button>
+      <button class="iconbtn" style="color:#64748b;font-size:12px" onclick="lShowBackup=!lShowBackup;lShowSettings=false;renderList()">⇩ バックアップ</button>
+    </span>
+  </div>`;
+
+  if (lShowSettings) html += renderSettings();
+  if (lShowBackup) html += renderBackup();
+  if (lMsg) { html += `<p class="msg-ok">${esc(lMsg)}</p>`; }
+
+  if (!data.cards.length) html += `<div class="center">まだ問題がありません</div>`;
+
+  html += data.cards.map(card => {
+    if (lEditing === card.id && lEdit) return renderEditCard(card);
+    const preview = card.tokens.map(t => t.type === "text" ? t.value : "___").join("").slice(0, 40);
+    let inner = `<div class="listitem" onclick="lExpanded=lExpanded==='${card.id}'?null:'${card.id}';renderList()">
+      <span class="txt">${card.tag ? `<span class="tagchip">${esc(card.tag)}</span>` : ""}${esc(preview)}…</span>
+      <button class="iconbtn" style="color:#94a3b8" onclick="event.stopPropagation();startEdit('${card.id}')">✎</button>
+      <button class="iconbtn" onclick="event.stopPropagation();confirmModal('この問題を削除しますか?',()=>{data.cards=data.cards.filter(c=>c.id!=='${card.id}');saveData();renderList();})">🗑</button>
+    </div>`;
+    if (lExpanded === card.id) {
+      inner += card.blanks.map(b => {
+        const rate = b.attempts > 0 ? Math.round(b.correct / b.attempts * 100) + "%" : "-";
+        return `<div class="blankrow">
+          <div>空欄${blankLetter(b.order)}: <b>${esc(b.answer)}</b></div>
+          <div class="stats">連続正解 ${b.streak} / 試行 ${b.attempts} / 正答率 ${rate} / 次回 ${formatDue(b.due)}</div>
+          <div>
+            <select onchange="updateBlank('${card.id}','${esc(b.id)}','mode',this.value)">
+              <option value="auto" ${b.mode === "auto" ? "selected" : ""}>自動切替</option>
+              <option value="choice" ${b.mode === "choice" ? "selected" : ""}>常に4択</option>
+              <option value="input" ${b.mode === "input" ? "selected" : ""}>常に入力</option>
+            </select>
+            <select onchange="updateBlank('${card.id}','${esc(b.id)}','customIntervalScale',parseFloat(this.value))">
+              ${[[0.5, "間隔 短め"], [1.0, "間隔 標準"], [1.5, "間隔 やや長め"], [2.0, "間隔 長め"]].map(([v, l]) =>
+                `<option value="${v}" ${(b.customIntervalScale || 1.0) === v ? "selected" : ""}>${l}(${v}x)</option>`).join("")}
+            </select>
+          </div>
+          <div class="stats">誤答: ${esc((b.distractors || []).join(" / ")) || "なし"}</div>
+        </div>`;
+      }).join("") +
+      `<div style="margin-top:8px"><button class="iconbtn" style="color:#94a3b8;font-size:12px"
+        onclick="confirmModal('この問題の学習進捗をリセットしますか?',()=>resetProgress('${card.id}'))">↺ 進捗をリセット</button></div>`;
+    }
+    return `<div class="card">${inner}</div>`;
+  }).join("");
+
+  main.innerHTML = html;
+  lMsg = "";
+}
+
+function updateBlank(cardId, blankId, field, value) {
+  const c = data.cards.find(c => c.id === cardId);
+  const b = c && c.blanks.find(b => b.id === blankId);
+  if (!b) return;
+  b[field] = value;
+  saveData();
+}
+function resetProgress(cardId) {
+  const c = data.cards.find(c => c.id === cardId);
+  if (!c) return;
+  c.blanks.forEach(b => { b.streak = 0; b.attempts = 0; b.correct = 0; b.intervalIndex = -1; b.due = null; });
+  saveData(); renderList();
+}
+
+/* ---- 編集 ---- */
+function startEdit(cardId) {
+  const card = data.cards.find(c => c.id === cardId);
+  if (!card) return;
+  const raw = cardToRawText(card);
+  const { tokens, blanks } = parseCardText(raw);
+  lEdit = { tag: card.tag || "", rawText: raw, tokens, blanks: mergeBlanks(blanks, card.blanks) };
+  lEditing = cardId; lExpanded = null;
+  renderList();
+}
+function reparseEdit() {
+  const { tokens, blanks } = parseCardText(lEdit.rawText);
+  lEdit.tokens = tokens;
+  lEdit.blanks = mergeBlanks(blanks, lEdit.blanks);
+  renderList();
+}
+function renderEditCard(card) {
+  return `<div class="card gap8">
+    <div class="sec-label">タグ</div>
+    <input type="text" value="${esc(lEdit.tag)}" oninput="lEdit.tag=this.value">
+    <div class="sec-label">問題文(空欄は {答え})</div>
+    <textarea oninput="lEdit.rawText=this.value">${esc(lEdit.rawText)}</textarea>
+    <button class="btn btn-dark" style="min-height:40px" onclick="reparseEdit()">再解析</button>
+    ${lEdit.blanks.map((b, bi) => `
+      <div class="blankrow">
+        <div>空欄${blankLetter(b.order)}: <b>${esc(b.answer || "未定義")}</b></div>
+        <div class="gap8" style="margin-top:6px">
+          ${[0, 1, 2].map(i => `<input type="text" placeholder="誤答${i + 1}" value="${esc((b.distractors || [])[i] || "")}"
+            oninput="if(!lEdit.blanks[${bi}].distractors)lEdit.blanks[${bi}].distractors=[];lEdit.blanks[${bi}].distractors[${i}]=this.value">`).join("")}
+        </div>
+      </div>`).join("")}
+    <div class="row" style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn btn-ghost" style="flex:1;min-height:42px" onclick="lEditing=null;lEdit=null;renderList()">キャンセル</button>
+      <button class="btn btn-ok" style="flex:1;min-height:42px" onclick="saveEdit('${card.id}')">保存</button>
+    </div>
+  </div>`;
+}
+function saveEdit(cardId) {
+  const idx = data.cards.findIndex(c => c.id === cardId);
+  if (idx === -1) return;
+  const orig = data.cards[idx];
+  data.cards[idx] = {
+    id: orig.id, createdAt: orig.createdAt, tag: lEdit.tag,
+    tokens: lEdit.tokens,
+    blanks: lEdit.blanks.map(b => ({ ...b, distractors: (b.distractors || []).filter(Boolean) })),
+  };
+  saveData();
+  lEditing = null; lEdit = null; lMsg = "保存しました";
+  renderList();
+}
+
+/* ---- 設定 ---- */
+function renderSettings() {
+  const s = data.settings;
+  return `<div class="card gap8">
+    <div class="sec-label">入力式への昇格: 連続正解回数</div>
+    <input type="number" min="1" value="${s.promoteStreak}" onchange="data.settings.promoteStreak=Number(this.value);saveData()">
+    <div class="sec-label">入力式への昇格: 正答率閾値(0〜1)</div>
+    <input type="number" min="0" max="1" step="0.05" value="${s.promoteAccuracy}" onchange="data.settings.promoteAccuracy=Number(this.value);saveData()">
+    <div class="sec-label">復習間隔(秒・カンマ区切り)</div>
+    <input type="text" value="${s.intervals.join(",")}"
+      onchange="data.settings.intervals=this.value.split(',').map(v=>Number(v.trim())).filter(v=>!isNaN(v)&&v>0);saveData()">
+    <p class="small">例: 600(10分), 86400(1日), 259200(3日)…</p>
+  </div>`;
+}
+
+/* ---- バックアップ ---- */
+function renderBackup() {
+  return `<div class="card gap8">
+    <div class="sec-label">エクスポート</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" style="flex:1;min-height:42px" onclick="copyExport(this)">コピー</button>
+      <button class="btn btn-ghost" style="flex:1;min-height:42px" onclick="downloadExport()">ファイル保存</button>
+    </div>
+    <div class="sec-label">インポート(貼り付けて上書き)</div>
+    <textarea class="mono" id="bk-import" placeholder="バックアップJSONを貼り付け"></textarea>
+    <button class="btn btn-dark" style="min-height:42px"
+      onclick="confirmModal('現在のデータを上書きしてインポートします。よろしいですか?',doOverwriteImport)">上書きインポート実行</button>
+    <div class="sec-label">追加インポート(既存はそのまま・重複スキップ)</div>
+    <textarea class="mono" id="bk-append" placeholder="登録用JSONまたはエクスポートJSONを貼り付け"></textarea>
+    <button class="btn btn-primary" style="min-height:42px" onclick="doAppendImport()">追加インポート実行</button>
+    <div class="sec-label">ファイルから読み込み(上の欄に展開されます)</div>
+    <input type="file" accept=".json,application/json" onchange="loadImportFile(this)">
+  </div>`;
+}
+function copyExport(btn) {
+  const txt = JSON.stringify(data);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(() => { btn.textContent = "コピーしました"; setTimeout(() => btn.textContent = "コピー", 1500); });
+  } else {
+    prompt("以下を全選択してコピーしてください", txt);
+  }
+}
+function downloadExport() {
+  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  const d = new Date();
+  a.download = `穴埋めバックアップ_${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function loadImportFile(input) {
+  const f = input.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    document.getElementById("bk-import").value = r.result;
+    document.getElementById("bk-append").value = r.result;
+    alert("ファイルを読み込みました。上書きインポートか追加インポートの実行ボタンを押してください");
+  };
+  r.readAsText(f);
+}
+function doOverwriteImport() {
+  try {
+    const parsed = JSON.parse(document.getElementById("bk-import").value);
+    if (!parsed.cards || !parsed.settings) throw new Error("形式不正");
+    data = parsed;
+    saveData();
+    lMsg = "インポートしました(" + data.cards.length + "問)";
+  } catch (e) {
+    lMsg = ""; alert("インポートに失敗しました(JSON形式を確認してください)");
+  }
+  renderList();
+}
+function doAppendImport() {
+  try {
+    const parsed = JSON.parse(document.getElementById("bk-append").value);
+    const cards = Array.isArray(parsed) ? parsed : parsed.cards;
+    if (!Array.isArray(cards)) throw new Error("形式不正");
+    const sig = c => (c.tokens || []).map(t => t.type === "text" ? t.value : "□").join("").replace(/\s+/g, "");
+    const existing = new Set(data.cards.map(sig));
+    let added = 0, skipped = 0;
+    for (const c of cards) {
+      if (!c.tokens || !c.blanks) { skipped++; continue; }
+      const s = sig(c);
+      if (existing.has(s)) { skipped++; continue; }
+      existing.add(s);
+      data.cards.push({
+        id: genId("card"), createdAt: Date.now(), tag: c.tag || "",
+        tokens: c.tokens,
+        blanks: c.blanks.map(b => ({
+          id: genId("blank"), key: b.key, order: b.order, label: b.label || null,
+          answer: b.answer, distractors: (b.distractors || []).filter(Boolean),
+          streak: b.streak || 0, attempts: b.attempts || 0, correct: b.correct || 0,
+          intervalIndex: (b.intervalIndex === undefined ? -1 : b.intervalIndex),
+          due: (b.due === undefined ? null : b.due),
+          mode: b.mode || "auto", customIntervalScale: b.customIntervalScale || 1.0,
+        })),
+      });
+      added++;
+    }
+    saveData();
+    lMsg = `追加インポート完了: ${added}問追加 / ${skipped}問スキップ(重複等)`;
+  } catch (e) {
+    lMsg = ""; alert("追加インポートに失敗しました(JSON形式を確認してください)");
+  }
+  renderList();
+}
+
+/* ============================ 起動 ============================ */
+switchTab("study");
+</script>
+</body>
+</html>
