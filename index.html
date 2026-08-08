@@ -77,6 +77,10 @@
   .blankrow .stats { font-size:11px; color:var(--sub); margin:2px 0 6px; }
   .blankrow select { width:auto; padding:5px 8px; font-size:12px; margin-right:6px; height:auto; }
   .center { text-align:center; padding:56px 0; color:var(--sub); font-size:14px; }
+  .fixbtn {
+    background:var(--card); border:1px solid #cbd5e1; border-radius:8px; color:#475569;
+    font-size:11px; padding:6px 10px; font-family:inherit; white-space:nowrap; flex-shrink:0;
+  }
   .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; z-index:50; padding:24px; }
   .modal { background:var(--card); border-radius:14px; padding:20px; max-width:320px; width:100%; }
   .modal p { font-size:14px; margin-bottom:14px; }
@@ -152,7 +156,21 @@ function splitVariants(f) {
 }
 function checkAnswer(input, field) {
   const n = nfkcNorm(input);
-  return splitVariants(field).some(v => nfkcNorm(v) === n);
+  if (!n) return false;
+  const cands = new Set();
+  splitVariants(field).forEach(v => {
+    const nv = nfkcNorm(v); // NFKCで全角括弧も半角化される
+    cands.add(nv);
+    // 「〇〇(△△)」は 〇〇 でも △△ でも正解とする
+    const base = nv.replace(/\([^()]*\)/g, "");
+    if (base) cands.add(base);
+    const re = /\(([^()]*)\)/g;
+    let m;
+    while ((m = re.exec(nv)) !== null) {
+      if (m[1]) cands.add(m[1]);
+    }
+  });
+  return cands.has(n);
 }
 function primaryAnswer(field) {
   const v = splitVariants(field);
@@ -260,12 +278,18 @@ function computeQueue() {
   const now = Date.now(), due = [], fresh = [];
   data.cards.forEach(c => {
     if (!c.blanks || !c.blanks.length) return;
-    const d = c.blanks.filter(b => b.due !== null && b.due <= now).map(b => b.due);
-    if (d.length) due.push({ cardId: c.id, due: Math.min(...d) });
-    else if (c.blanks.some(b => b.due === null)) fresh.push({ cardId: c.id, due: 0 });
+    const dueBlanks = c.blanks.filter(b => b.due !== null && b.due <= now);
+    if (dueBlanks.length) {
+      // 前回解いてから時間が経っているものを優先(古い順)
+      const last = Math.min(...dueBlanks.map(b => b.lastAnswered || 0));
+      due.push({ cardId: c.id, last });
+    } else if (c.blanks.some(b => b.due === null)) {
+      fresh.push({ cardId: c.id, last: 0 });
+    }
   });
-  due.sort((a, b) => a.due - b.due);
-  return { queue: [...due, ...fresh], dueCount: due.length, freshCount: fresh.length };
+  due.sort((a, b) => a.last - b.last);
+  // 未回答(新規)を最優先、次に復習(前回回答が古い順)
+  return { queue: [...fresh, ...due], dueCount: due.length, freshCount: fresh.length };
 }
 function isInputMode(b) {
   if (b.mode === "choice") return false;
@@ -275,6 +299,7 @@ function isInputMode(b) {
 }
 function applyResult(blank, correct) {
   blank.attempts += 1;
+  blank.lastAnswered = Date.now();
   if (correct) blank.correct += 1;
   const scale = blank.customIntervalScale || 1.0;
   if (correct) {
@@ -360,6 +385,20 @@ function renderStudy(info) {
     </div>`;
     return;
   }
+
+  // その場編集モード(誤字脱字の修正)
+  if (sEditing) {
+    main.innerHTML = `<div class="card gap8">
+      <div class="sec-label">問題文を修正(空欄は {答え}。学習履歴は保持されます)</div>
+      <textarea id="s-edit" style="min-height:160px">${esc(sEditText)}</textarea>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" style="flex:1;min-height:44px" onclick="sEditing=false;renderStudy()">キャンセル</button>
+        <button class="btn btn-ok" style="flex:1;min-height:44px" onclick="saveStudyEdit()">保存して続行</button>
+      </div>
+    </div>`;
+    document.getElementById("s-edit").addEventListener("input", e => sEditText = e.target.value);
+    return;
+  }
   const qHtml = card.tokens.map(t => {
     if (t.type === "text") return esc(t.value).replace(/\n/g, "<br>");
     const b = card.blanks.find(b => b.key === t.key);
@@ -390,11 +429,16 @@ function renderStudy(info) {
     body = card.blanks.map(b => {
       const r = sResults[b.key];
       if (!r) return "";
-      const im = isInputMode(b);
+      const typed = sAnswers[b.key] || "";
       return `<div class="result ${r.correct ? "ok" : "ng"}">
-        ${r.correct ? "✓" : "✕"} 空欄${blankLetter(b.order)}: ${r.correct ? "正解" : "不正解"} — 正答: <b>${esc(primaryAnswer(b.answer))}</b>
-        <div class="duetxt">次回出題: ${formatDue(b.due)}</div>
-        ${(!r.correct && !r.overridden && im) ? `<div><button onclick="overrideCorrect('${esc(b.key)}')">実は正解だった(表記ゆれなど)</button></div>` : ""}
+        <div style="display:flex;align-items:flex-start;gap:8px">
+          <div style="flex:1">
+            ${r.correct ? "✓" : "✕"} 空欄${blankLetter(b.order)}: ${r.correct ? "正解" : "不正解"}${r.overridden ? "(修正済)" : ""} — 正答: <b>${esc(primaryAnswer(b.answer))}</b>
+            ${!r.correct ? `<div class="duetxt">あなたの回答: ${esc(typed)}</div>` : ""}
+            <div class="duetxt">次回出題: ${formatDue(b.due)}</div>
+          </div>
+          <button class="fixbtn" onclick="toggleResult('${esc(b.key)}')">${r.correct ? "×に修正" : "○に修正"}</button>
+        </div>
       </div>`;
     }).join("") +
     `<div style="margin-top:12px"><button class="btn btn-primary" onclick="nextCard()">次へ ›</button></div>`;
@@ -403,11 +447,34 @@ function renderStudy(info) {
   main.innerHTML = `
     <div class="meta">
       <span>残り ${sQueue.length - sPos}問(復習 ${info.dueCount}・新規 ${info.freshCount})</span>
-      <span class="pill">空欄 ${card.blanks.length}個</span>
+      <span style="display:flex;align-items:center;gap:6px">
+        <span class="pill">空欄 ${card.blanks.length}個</span>
+        <button class="fixbtn" onclick="startStudyEdit()" title="この問題を修正">✎ 修正</button>
+      </span>
     </div>
     <div class="card qtext">${qHtml}</div>
     ${body}`;
   updateSubmitBtn();
+}
+let sEditing = false, sEditText = "";
+function startStudyEdit() {
+  const card = currentCard();
+  if (!card) return;
+  sEditText = cardToRawText(card);
+  sEditing = true;
+  renderStudy();
+}
+function saveStudyEdit() {
+  const card = currentCard();
+  if (!card) { sEditing = false; renderStudy(); return; }
+  const { tokens, blanks } = parseCardText(sEditText);
+  if (!blanks.length) { alert("空欄がありません。{答え} の形式を確認してください"); return; }
+  card.tokens = tokens;
+  card.blanks = mergeBlanks(blanks, card.blanks);
+  saveData();
+  sEditing = false;
+  resetCardState();  // 修正後の内容で出題し直す
+  renderStudy();
 }
 function pickChoice(key, el) {
   sAnswers[key] = el.getAttribute("data-v");
@@ -428,22 +495,29 @@ function submitAll() {
     const correct = isInputMode(b)
       ? checkAnswer(val, b.answer)
       : nfkcNorm(val) === nfkcNorm(primaryAnswer(b.answer));
-    sResults[b.key] = { correct, overridden: false };
+    // 判定修正(トグル)用に回答前の状態を保存しておく
+    sResults[b.key] = {
+      correct, overridden: false,
+      prev: { streak: b.streak, attempts: b.attempts, correct: b.correct,
+              intervalIndex: b.intervalIndex, due: b.due, lastAnswered: b.lastAnswered || null },
+    };
     applyResult(b, correct);
   });
   saveData();
   sPhase = "result";
   renderStudy();
 }
-function overrideCorrect(key) {
+/* 正誤判定を反転する(統計・次回出題日も付け替える) */
+function toggleResult(key) {
   const card = currentCard();
-  const b = card.blanks.find(b => b.key === key);
-  if (!b) return;
-  // 直前の不正解記録を正解に修正
-  b.correct += 1; b.streak += 1;
-  b.intervalIndex = Math.min(b.intervalIndex + 1, data.settings.intervals.length - 1);
-  b.due = Date.now() + data.settings.intervals[b.intervalIndex] * 1000 * (b.customIntervalScale || 1.0);
-  sResults[key] = { correct: true, overridden: true };
+  const b = card && card.blanks.find(b => b.key === key);
+  const r = sResults && sResults[key];
+  if (!b || !r || !r.prev) return;
+  Object.assign(b, r.prev);       // 回答前の状態に巻き戻し
+  const newCorrect = !r.correct;
+  applyResult(b, newCorrect);     // 逆の判定で記録し直す
+  r.correct = newCorrect;
+  r.overridden = true;
   saveData();
   renderStudy();
 }
