@@ -88,6 +88,42 @@
   .hide { display:none !important; }
   .gap8 > * + * { margin-top:8px; }
   code { background:#f1f5f9; padding:1px 5px; border-radius:4px; font-size:12px; }
+
+  /* ---- モード選択 ---- */
+  .modebtn {
+    display:flex; align-items:center; gap:12px; width:100%; text-align:left; padding:16px; margin-bottom:10px;
+    background:var(--card); border:1.5px solid var(--border); border-radius:14px; font-family:inherit; color:var(--text); cursor:pointer;
+  }
+  .modebtn:disabled { opacity:.45; }
+  .modebtn .mico { font-size:24px; }
+  .modebtn .mbody { flex:1; min-width:0; }
+  .modebtn .mtitle { display:block; font-size:15px; font-weight:700; }
+  .modebtn .mdesc { display:block; font-size:11px; color:var(--sub); margin-top:3px; line-height:1.5; }
+  .modebtn .mcount { font-size:22px; font-weight:700; color:var(--accent); white-space:nowrap; }
+  .modebtn .mcount small { font-size:11px; margin-left:1px; color:var(--sub); font-weight:400; }
+
+  /* ---- 回答中の画面固定・上下2分割レイアウト ---- */
+  body.lock {
+    position:fixed; left:0; right:0; top:var(--vvt, 0px); height:var(--vvh, 100%);
+    overflow:hidden; display:flex; flex-direction:column; padding-bottom:0;
+  }
+  body.lock header { flex:none; padding-bottom:8px; }
+  body.lock header p { display:none; }
+  body.lock main { flex:1 1 auto; min-height:0; width:100%; display:flex; flex-direction:column; padding:10px 14px 8px; }
+  body.lock main > .meta { flex:none; margin-bottom:8px; }
+  body.lock nav { position:static; flex:none; }
+  .qpane {
+    position:relative; flex:1 1 auto; min-height:80px; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
+    background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; line-height:1.9; font-size:15px;
+  }
+  .apane { flex:0 0 auto; max-height:56%; min-height:0; display:flex; flex-direction:column; margin-top:10px; }
+  .apane.res { max-height:62%; }
+  .a-scroll { flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+  .a-scroll > .choice:last-child, .a-scroll > .result:last-child { margin-bottom:0; }
+  .a-foot { flex:none; display:flex; gap:8px; padding-top:8px; }
+  .blankmark.cur { background:var(--accent); color:#fff; box-shadow:0 0 0 3px #c7d2fe; }
+  .blankmark.done { background:#f1f5f9; color:#475569; font-weight:600; }
+  .blankmark.todo { opacity:.5; }
 </style>
 </head>
 <body>
@@ -274,8 +310,10 @@ function mergeBlanks(parsed, existing) {
 }
 
 /* ============================ SRS ============================ */
-function computeQueue() {
+/* mode: "review"=復習期限が来た問題のみ(前回回答が古い順) / "new"=未回答の空欄を含む問題のみ(登録順) */
+function computeQueue(mode) {
   const now = Date.now(), due = [], fresh = [];
+  let nextDue = null;
   data.cards.forEach(c => {
     if (!c.blanks || !c.blanks.length) return;
     const dueBlanks = c.blanks.filter(b => b.due !== null && b.due <= now);
@@ -283,13 +321,14 @@ function computeQueue() {
       // 前回解いてから時間が経っているものを優先(古い順)
       const last = Math.min(...dueBlanks.map(b => b.lastAnswered || 0));
       due.push({ cardId: c.id, last });
-    } else if (c.blanks.some(b => b.due === null)) {
-      fresh.push({ cardId: c.id, last: 0 });
     }
+    if (c.blanks.some(b => b.due === null)) fresh.push({ cardId: c.id, last: 0 });
+    c.blanks.forEach(b => {
+      if (b.due !== null && b.due > now && (nextDue === null || b.due < nextDue)) nextDue = b.due;
+    });
   });
   due.sort((a, b) => a.last - b.last);
-  // 未回答(新規)を最優先、次に復習(前回回答が古い順)
-  return { queue: [...fresh, ...due], dueCount: due.length, freshCount: fresh.length };
+  return { queue: mode === "new" ? fresh : due, dueCount: due.length, freshCount: fresh.length, nextDue };
 }
 function isInputMode(b) {
   if (b.mode === "choice") return false;
@@ -333,6 +372,7 @@ function switchTab(t) {
   tab = t;
   ["study", "register", "list"].forEach(x =>
     document.getElementById("nav-" + x).classList.toggle("active", x === t));
+  setLock(false);  // 画面固定は学習中のみ
   if (t === "study") initStudy();
   else if (t === "register") renderRegister();
   else renderList();
@@ -340,16 +380,45 @@ function switchTab(t) {
 </script>
 <script>
 /* ============================ 学習タブ ============================ */
+// sMode: null=モード選択画面 / "review"=復習モード / "new"=新規学習モード
+let sMode = null;
 let sQueue = [], sPos = 0, sPhase = "question", sAnswers = {}, sChoices = {}, sResults = null;
+let sCur = 0;            // 現在回答中の空欄(order順のインデックス)
+let sBusy = false;       // 選択直後の連打防止
+let sResetScroll = true; // 新しい問題に切り替わったら問題文スクロールを先頭に戻す
+let sEditing = false, sEditText = "";
+
+function setLock(on) { document.body.classList.toggle("lock", !!on); }
+
+/* iOSでキーボードが出ても固定レイアウトが崩れないよう、可視領域の高さ・位置に追従させる */
+(function () {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const sync = () => {
+    document.documentElement.style.setProperty("--vvh", vv.height + "px");
+    document.documentElement.style.setProperty("--vvt", vv.offsetTop + "px");
+  };
+  vv.addEventListener("resize", sync);
+  vv.addEventListener("scroll", sync);
+  sync();
+})();
 
 function initStudy() {
-  const info = computeQueue();
-  sQueue = info.queue; sPos = 0;
+  sMode = null; sEditing = false;
+  renderStudy();
+}
+function startStudy(mode) {
+  sMode = mode; sEditing = false;
+  sQueue = computeQueue(mode).queue; sPos = 0;
   resetCardState();
-  renderStudy(info);
+  renderStudy();
+}
+function orderedBlanks(card) {
+  return [...card.blanks].sort((a, b) => a.order - b.order);
 }
 function resetCardState() {
   sPhase = "question"; sAnswers = {}; sChoices = {}; sResults = null;
+  sCur = 0; sBusy = false; sResetScroll = true;
   const card = currentCard();
   if (!card) return;
   card.blanks.forEach(b => {
@@ -373,21 +442,54 @@ function currentCard() {
   const item = sQueue[sPos];
   return item ? data.cards.find(c => c.id === item.cardId) : null;
 }
+function currentBlank() {
+  const card = currentCard();
+  return card ? orderedBlanks(card)[sCur] || null : null;
+}
 
-function renderStudy(info) {
-  info = info || computeQueue();
+/* ---- モード選択画面 ---- */
+function renderModeSelect() {
+  setLock(false);
   const main = document.getElementById("main");
+  if (!data.cards.length) {
+    main.innerHTML = `<div class="center">まだ問題がありません
+      <p class="small" style="margin-top:8px">「登録」タブから問題を追加してください</p></div>`;
+    return;
+  }
+  const info = computeQueue("review");
+  const btn = (mode, ico, title, desc, n) => `
+    <button class="modebtn" onclick="startStudy('${mode}')" ${n ? "" : "disabled"}>
+      <span class="mico">${ico}</span>
+      <span class="mbody"><span class="mtitle">${title}</span><span class="mdesc">${desc}</span></span>
+      <span class="mcount">${n}<small>問</small></span>
+    </button>`;
+  const reviewDesc = info.dueCount
+    ? "復習期限が来た問題を、前回解いた時期が古い順に出題"
+    : (info.nextDue ? `次の復習は ${formatDue(info.nextDue)}` : "復習待ちの問題はありません");
+  main.innerHTML = `<div class="sec-label">学習モードを選択</div>
+    ${btn("review", "🔁", "復習モード", reviewDesc, info.dueCount)}
+    ${btn("new", "✨", "新規学習モード", "まだ解いていない問題を登録順に出題", info.freshCount)}`;
+}
+
+function renderStudy() {
+  const main = document.getElementById("main");
+  if (!sMode) { renderModeSelect(); return; }
+
   const card = currentCard();
   if (!card) {
-    main.innerHTML = `<div class="center">本日分の学習は完了しました 🎉
-      ${data.cards.length === 0 ? '<p class="small" style="margin-top:8px">「登録」タブから問題を追加してください</p>' : ""}
-      <div style="margin-top:18px"><button class="btn btn-ghost" style="width:auto;padding:0 18px;min-height:42px;margin:0 auto" onclick="initStudy()">出題キューを更新する</button></div>
+    setLock(false);
+    main.innerHTML = `<div class="center">${sMode === "review" ? "復習" : "新規学習"}の出題はすべて完了しました 🎉
+      <div class="gap8" style="margin:20px auto 0;max-width:260px">
+        <button class="btn btn-primary" onclick="initStudy()">モード選択に戻る</button>
+        <button class="btn btn-ghost" onclick="startStudy(sMode)">出題キューを更新する</button>
+      </div>
     </div>`;
     return;
   }
 
   // その場編集モード(誤字脱字の修正)
   if (sEditing) {
+    setLock(false);
     main.innerHTML = `<div class="card gap8">
       <div class="sec-label">問題文を修正(空欄は {答え}。学習履歴は保持されます)</div>
       <textarea id="s-edit" style="min-height:160px">${esc(sEditText)}</textarea>
@@ -399,34 +501,50 @@ function renderStudy(info) {
     document.getElementById("s-edit").addEventListener("input", e => sEditText = e.target.value);
     return;
   }
+
+  setLock(true);
+  const blanks = orderedBlanks(card);
+  const cur = sPhase === "question" ? blanks[sCur] : null;
+
+  // 上画面: 問題文(現在の空欄をハイライト、回答済みの空欄は選んだ答えを表示)
   const qHtml = card.tokens.map(t => {
     if (t.type === "text") return esc(t.value).replace(/\n/g, "<br>");
     const b = card.blanks.find(b => b.key === t.key);
     if (!b) return "";
-    if (sPhase === "question") return `<span class="blankmark">【 ${blankLetter(b.order)} 】</span>`;
+    const L = blankLetter(b.order);
+    if (sPhase === "question") {
+      if (cur && b.key === cur.key) return `<span class="blankmark cur">【 ${L} 】</span>`;
+      if (sAnswers[b.key]) return `<span class="blankmark done"><span class="letter">${L}:</span>${esc(sAnswers[b.key])}</span>`;
+      return `<span class="blankmark todo">【 ${L} 】</span>`;
+    }
     const r = sResults && sResults[b.key];
     const cls = r ? (r.correct ? "ok" : "ng") : "";
-    return `<span class="ansline ${cls}"><span class="letter">${blankLetter(b.order)}:</span>${esc(primaryAnswer(b.answer))}</span>`;
+    return `<span class="ansline ${cls}"><span class="letter">${L}:</span>${esc(primaryAnswer(b.answer))}</span>`;
   }).join("");
 
-  let body = "";
+  // 下画面: 現在の空欄1つ分の選択肢 / 判定結果
+  let pane;
   if (sPhase === "question") {
-    body = card.blanks.map(b => {
-      const im = isInputMode(b);
-      let inner;
-      if (im) {
-        inner = `<input type="text" placeholder="答えを入力" value="${esc(sAnswers[b.key] || "")}"
-          oninput="sAnswers['${esc(b.key)}']=this.value;updateSubmitBtn()">`;
-      } else {
-        inner = (sChoices[b.key] || []).map(c =>
-          `<button class="choice ${sAnswers[b.key] === c ? "sel" : ""}" onclick="pickChoice('${esc(b.key)}', this)" data-v="${esc(c)}">${esc(c)}</button>`
+    const im = isInputMode(cur);
+    const isLast = blanks.every(b => b.key === cur.key || (sAnswers[b.key] || "").trim());
+    const inner = im
+      ? `<input type="text" id="s-input" placeholder="答えを入力" autocomplete="off" autocapitalize="off" spellcheck="false"
+          value="${esc(sAnswers[cur.key] || "")}" oninput="setCurAnswer(this.value)"
+          onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();submitInput()}">`
+      : (sChoices[cur.key] || []).map((c, i) =>
+          `<button class="choice ${sAnswers[cur.key] === c ? "sel" : ""}" onclick="pickChoice(${i})">${esc(c)}</button>`
         ).join("");
-      }
-      return `<div class="sec-label">空欄 ${blankLetter(b.order)} <span class="pill">${im ? "入力式" : "4択"}</span></div>${inner}`;
-    }).join("") +
-    `<div style="margin-top:14px"><button class="btn btn-primary" id="submit-btn" onclick="submitAll()">判定する</button></div>`;
+    const back = sCur > 0
+      ? `<button class="btn btn-ghost" style="flex:1;min-height:44px" onclick="prevBlank()">‹ 前の空欄</button>` : "";
+    const next = im
+      ? `<button class="btn btn-primary" style="flex:2;min-height:44px" id="next-btn" onclick="submitInput()">${isLast ? "判定する" : "次へ ›"}</button>` : "";
+    pane = `<div class="apane">
+      <div class="sec-label" style="margin-top:0">空欄 ${blankLetter(cur.order)} <span class="pill">${im ? "入力式" : "4択"}</span></div>
+      <div class="a-scroll">${inner}</div>
+      ${back || next ? `<div class="a-foot">${back}${next}</div>` : ""}
+    </div>`;
   } else {
-    body = card.blanks.map(b => {
+    const list = blanks.map(b => {
       const r = sResults[b.key];
       if (!r) return "";
       const typed = sAnswers[b.key] || "";
@@ -440,23 +558,44 @@ function renderStudy(info) {
           <button class="fixbtn" onclick="toggleResult('${esc(b.key)}')">${r.correct ? "×に修正" : "○に修正"}</button>
         </div>
       </div>`;
-    }).join("") +
-    `<div style="margin-top:12px"><button class="btn btn-primary" onclick="nextCard()">次へ ›</button></div>`;
+    }).join("");
+    pane = `<div class="apane res">
+      <div class="a-scroll">${list}</div>
+      <div class="a-foot"><button class="btn btn-primary" onclick="nextCard()">次の問題 ›</button></div>
+    </div>`;
   }
+
+  const oldQ = document.getElementById("qpane");
+  const prevTop = sResetScroll || !oldQ ? 0 : oldQ.scrollTop;
+  sResetScroll = false;
 
   main.innerHTML = `
     <div class="meta">
-      <span>残り ${sQueue.length - sPos}問(復習 ${info.dueCount}・新規 ${info.freshCount})</span>
       <span style="display:flex;align-items:center;gap:6px">
-        <span class="pill">空欄 ${card.blanks.length}個</span>
+        <button class="fixbtn" onclick="initStudy()">‹ モード</button>
+        <span>${sMode === "review" ? "復習" : "新規"} 残り${sQueue.length - sPos}問</span>
+      </span>
+      <span style="display:flex;align-items:center;gap:6px">
+        <span class="pill">${sPhase === "question" ? `空欄 ${sCur + 1}/${blanks.length}` : "判定"}</span>
         <button class="fixbtn" onclick="startStudyEdit()" title="この問題を修正">✎ 修正</button>
       </span>
     </div>
-    <div class="card qtext">${qHtml}</div>
-    ${body}`;
-  updateSubmitBtn();
+    <div class="qpane" id="qpane">${qHtml}</div>
+    ${pane}`;
+
+  // 問題文のスクロール位置を維持しつつ、現在の空欄が見えていなければそこまでスクロール
+  const qp = document.getElementById("qpane");
+  qp.scrollTop = prevTop;
+  const curEl = qp.querySelector(".blankmark.cur");
+  if (curEl) {
+    const top = curEl.offsetTop, bottom = top + curEl.offsetHeight;
+    if (top < qp.scrollTop || bottom > qp.scrollTop + qp.clientHeight) {
+      qp.scrollTo({ top: Math.max(0, top - qp.clientHeight * 0.3), behavior: prevTop ? "smooth" : "auto" });
+    }
+  }
+  updateNextBtn();
 }
-let sEditing = false, sEditText = "";
+
 function startStudyEdit() {
   const card = currentCard();
   if (!card) return;
@@ -476,16 +615,51 @@ function saveStudyEdit() {
   resetCardState();  // 修正後の内容で出題し直す
   renderStudy();
 }
-function pickChoice(key, el) {
-  sAnswers[key] = el.getAttribute("data-v");
+
+/* ---- 1空欄ずつの回答操作 ---- */
+function pickChoice(i) {
+  if (sBusy) return;
+  const b = currentBlank();
+  if (!b) return;
+  sAnswers[b.key] = sChoices[b.key][i];
+  // 選んだ選択肢を一瞬ハイライトしてから次の空欄へ
+  sBusy = true;
+  document.querySelectorAll(".apane .choice").forEach((el, j) => el.classList.toggle("sel", j === i));
+  setTimeout(() => { sBusy = false; advanceBlank(); }, 180);
+}
+function setCurAnswer(v) {
+  const b = currentBlank();
+  if (!b) return;
+  sAnswers[b.key] = v;
+  updateNextBtn();
+}
+function updateNextBtn() {
+  const btn = document.getElementById("next-btn");
+  if (!btn) return;
+  const b = currentBlank();
+  btn.disabled = !(b && (sAnswers[b.key] || "").trim());
+}
+function submitInput() {
+  const b = currentBlank();
+  if (!b || !(sAnswers[b.key] || "").trim()) return;
+  advanceBlank();
+}
+/* 未回答の空欄があればそこへ(現在位置より後ろを優先)、全部答えたら判定へ */
+function advanceBlank() {
+  const card = currentCard();
+  if (!card) return;
+  const blanks = orderedBlanks(card);
+  const unanswered = i => !(sAnswers[blanks[i].key] || "").trim();
+  for (let i = sCur + 1; i < blanks.length; i++) if (unanswered(i)) { sCur = i; renderStudy(); return; }
+  for (let i = 0; i < sCur; i++) if (unanswered(i)) { sCur = i; renderStudy(); return; }
+  submitAll();
+}
+function prevBlank() {
+  if (sBusy || sCur <= 0) return;
+  sCur -= 1;
   renderStudy();
 }
-function updateSubmitBtn() {
-  const btn = document.getElementById("submit-btn");
-  if (!btn) return;
-  const card = currentCard();
-  btn.disabled = !card.blanks.every(b => (sAnswers[b.key] || "").trim().length > 0);
-}
+
 function submitAll() {
   const card = currentCard();
   if (!card) return;
