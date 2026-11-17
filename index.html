@@ -65,6 +65,7 @@
   .result button { background:none; border:none; text-decoration:underline; color:#64748b; font-size:12px; margin-top:4px; padding:0; font-family:inherit; }
   .ansline.ok { color:var(--ok); font-weight:700; }
   .ansline.ng { color:var(--ng); font-weight:700; }
+  .ansline.tap { cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px; }
   .letter { font-size:11px; opacity:.6; margin-right:1px; }
   .small { font-size:11px; color:var(--sub); }
   .msg-ok { font-size:12px; color:var(--ok); margin:6px 0; }
@@ -519,7 +520,8 @@ function renderStudy() {
     }
     const r = sResults && sResults[b.key];
     const cls = r ? (r.correct ? "ok" : "ng") : "";
-    return `<span class="ansline ${cls}"><span class="letter">${L}:</span>${esc(primaryAnswer(b.answer))}</span>`;
+    // 判定後は語句タップで○×を修正できる
+    return `<span class="ansline ${cls} tap" onclick="toggleResult('${esc(b.key)}')"><span class="letter">${L}:</span>${esc(primaryAnswer(b.answer))}</span>`;
   }).join("");
 
   // 下画面: 現在の空欄1つ分の選択肢 / 判定結果
@@ -544,23 +546,9 @@ function renderStudy() {
       ${back || next ? `<div class="a-foot">${back}${next}</div>` : ""}
     </div>`;
   } else {
-    const list = blanks.map(b => {
-      const r = sResults[b.key];
-      if (!r) return "";
-      const typed = sAnswers[b.key] || "";
-      return `<div class="result ${r.correct ? "ok" : "ng"}">
-        <div style="display:flex;align-items:flex-start;gap:8px">
-          <div style="flex:1">
-            ${r.correct ? "✓" : "✕"} 空欄${blankLetter(b.order)}: ${r.correct ? "正解" : "不正解"}${r.overridden ? "(修正済)" : ""} — 正答: <b>${esc(primaryAnswer(b.answer))}</b>
-            ${!r.correct ? `<div class="duetxt">あなたの回答: ${esc(typed)}</div>` : ""}
-            <div class="duetxt">次回出題: ${formatDue(b.due)}</div>
-          </div>
-          <button class="fixbtn" onclick="toggleResult('${esc(b.key)}')">${r.correct ? "×に修正" : "○に修正"}</button>
-        </div>
-      </div>`;
-    }).join("");
+    // 判定結果は問題文の色(緑=正解/赤=不正解)で示し、下画面は「次の問題」のみ
     pane = `<div class="apane res">
-      <div class="a-scroll">${list}</div>
+      <p class="small" style="text-align:center">語句をタップすると○×を修正できます</p>
       <div class="a-foot"><button class="btn btn-primary" onclick="nextCard()">次の問題 ›</button></div>
     </div>`;
   }
